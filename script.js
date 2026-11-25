@@ -1,61 +1,51 @@
-// Local: http://localhost:3000 | Produção: URL do Render
-const API_URL = 'https://eventos-backend-vfvv.onrender.com';
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const { createClient } = require('@supabase/supabase-js');
 
-const form = document.getElementById('form-evento');
-const lista = document.getElementById('lista-eventos');
-const mensagem = document.getElementById('mensagem');
+const app = express();
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
 
-async function carregarEventos() {
-  lista.textContent = 'Carregando...';
-  try {
-    const resposta = await fetch(`${API_URL}/eventos`);
-    const eventos = await resposta.json();
+// Aceita várias origens separadas por vírgula e ignora barra final
+const origensPermitidas = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(o => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
 
-    lista.innerHTML = '';
-    eventos.forEach(e => {
-      const div = document.createElement('div');
-      div.className = 'evento';
-      div.innerHTML = `
-        <h3></h3>
-        <p class="desc"></p>
-        <p><strong>Data:</strong> <span class="data"></span></p>
-        <p><strong>Local:</strong> <span class="local"></span></p>`;
-      // textContent evita injeção de HTML
-      div.querySelector('h3').textContent = e.titulo;
-      div.querySelector('.desc').textContent = e.descricao || '';
-      div.querySelector('.data').textContent = e.data_evento;
-      div.querySelector('.local').textContent = e.local;
-      lista.appendChild(div);
-    });
-  } catch (erro) {
-    lista.textContent = 'Erro ao carregar eventos.';
-  }
-}
+app.use(cors({ origin: origensPermitidas }));
+app.use(express.json());
 
-form.addEventListener('submit', async (ev) => {
-  ev.preventDefault();
+// Rota de teste
+app.get('/', (req, res) => res.send('API de Eventos Acadêmicos no ar'));
 
-  const novoEvento = {
-    titulo: document.getElementById('titulo').value,
-    descricao: document.getElementById('descricao').value,
-    data_evento: document.getElementById('data_evento').value,
-    local: document.getElementById('local').value
-  };
+// Listar eventos
+app.get('/eventos', async (req, res) => {
+  const { data, error } = await supabase
+    .from('eventos')
+    .select('*')
+    .order('id', { ascending: true });
 
-  try {
-    const resposta = await fetch(`${API_URL}/eventos`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(novoEvento)
-    });
-
-    if (!resposta.ok) throw new Error();
-    mensagem.textContent = 'Evento cadastrado com sucesso!';
-    form.reset();
-    carregarEventos();
-  } catch {
-    mensagem.textContent = 'Erro ao cadastrar evento.';
-  }
+  if (error) return res.status(500).json({ erro: error.message });
+  res.json(data);
 });
 
-carregarEventos();
+// Cadastrar evento
+app.post('/eventos', async (req, res) => {
+  const { titulo, descricao, data_evento, local } = req.body;
+
+  if (!titulo || !data_evento || !local) {
+    return res.status(400).json({ erro: 'titulo, data_evento e local são obrigatórios' });
+  }
+
+  const { data, error } = await supabase
+    .from('eventos')
+    .insert([{ titulo, descricao, data_evento, local }])
+    .select();
+
+  if (error) return res.status(500).json({ erro: error.message });
+  res.status(201).json(data[0]);
+});
+
+// Porta do ambiente (Render) ou 3000 local
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));
